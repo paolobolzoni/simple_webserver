@@ -1,0 +1,71 @@
+
+Here is a minimal but fully featured web server written in Node javascript.
+
+It easily allows to deploy a web server that works in http and https.
+It also allows to use websockets.
+
+
+Dependences:
+
+npm install websocket
+npm install toml
+
+You do not need the websocket module if you do not enable websockets.
+
+
+To generate a self-signed certificate for https:
+
+$ openssl genrsa -out key.pem
+$ openssl req -new -key key.pem -out csr.pem
+$ openssl x509 -req -days 3652 -in csr.pem -signkey key.pem -out cert.pem
+$ rm csr.pem
+
+
+
+Settings, all the relative paths start from the same directory where is server.js.
+
+server section,
+self explanatory.
+
+[server]
+ip = '0.0.0.0'
+port = 8080
+client_dir = '../client'
+websocket = true
+
+
+https section,
+if enabled the server executes in https.  On the http port still runs a http
+server that only understands GET and redirects to the https protocol.
+
+The redirection address is taken from the value of fqdn.
+If the fqdn value is missing the redirection is based on the request host
+header.
+So, if you are have a domain-validated certificate, put in fqdn the hostname it
+relates to.
+If you are using a self-signed certificate, leave it empty.
+
+The http server will serve all the GET request whose url start with the
+keep_http value if non-empty. The default value is for let's encrypt
+challenges.
+
+Finally, the websockets are executed in wss if this section is enabled.
+
+[https]
+enabled = true
+port = 8443
+key = './selfsig_keys/key.pem'
+cert = './selfsig_keys/cert.pem'
+fqdn = ''
+keep_http = '/.well-known/acme-challenge/'
+
+
+auth section,
+if enabled the https server (http if https is disabled) uses the basic auth
+
+[auth]
+enabled = false
+realm = 'My site'
+name = 'name'
+password = 'password'
+
