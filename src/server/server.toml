@@ -1,14 +1,13 @@
 
 [server]
 ip = '0.0.0.0'
-port = 8080
+port = 1080
 client_dir = '../client'
 websocket = true
 
 
 [https]
 enabled = true
-port = 8443
 key = './selfsig_keys/key.pem'
 cert = './selfsig_keys/cert.pem'
 fqdn = ''

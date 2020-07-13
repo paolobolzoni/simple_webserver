@@ -89,11 +89,19 @@ const http_dispatcher = npObj({
 });
 
 const ws_dispatcher = npObj({
-    check_origin: function(origin) { 
-        //accept origin "logic"
-        console.log(`WS connection from ${origin}`);
-        return true;
-    },
+    check_origin: (function(fqdn, port){
+        if (!!fqdn) {
+            return function(origin) {
+                console.log(`WS connection from ${origin}`);
+                return origin === 'https://' + fqdn + ':' + port;
+            }
+        } else {
+            return function(origin) {
+                console.log(`WS connection from ${origin}`);
+                return true;
+            }
+        }
+    }(settings.https.enabled && settings.https.fqdn, settings.server.port)),
     '/echo/': ws_functions.echo
 });
 
@@ -159,7 +167,7 @@ const server = (new function(settings, methods) {
 
     this.start = (function(sserver, shttps) {
         return function() {
-            const redirector = (function(fqdn, https_port, keep_http) {
+            const redirector = (function(fqdn, port, keep_http) {
                 return function(req, res) {
                     if (req.method !== 'GET') {
                         return r(405, req, res);
@@ -179,26 +187,42 @@ const server = (new function(settings, methods) {
                         new_host = !!port  ?  old_host.slice(0, port.index)  :  old_host;
                     }
 
-                    const redirect_to = `https://${new_host}:${https_port}${req.url}`;
+                    const redirect_to = `https://${new_host}:${port}${req.url}`;
                     console.log(`Http GET redirect ${req.url} -> ${redirect_to}`);
 
                     res.setHeader('Location', redirect_to);
                     return r(301, req, res);
                 }
-            }(shttps.fqdn, shttps.port, shttps.keep_http));
+            }(shttps.fqdn, sserver.port, shttps.keep_http));
 
             function https() {
+                function dispatch_on_SYN(socket) {
+                    function ondata(buffer) {
+                        const isSYN = buffer[0] === 22;
+
+                        socket.pause();
+                        socket.unshift(buffer);
+
+                        const server = isSYN ? https : http;
+                        server.emit('connection', socket);
+
+                        process.nextTick(function(){ socket.resume(); });
+                    }
+                    socket.once('data', ondata);
+                }
+
                 const https_options = {
                     key: fs.readFileSync(shttps.key),
                     cert: fs.readFileSync(shttps.cert)
                 }
-                require('http').createServer(redirector)
-                    .listen(sserver.port|0, sserver.ip);
-                const srv = require('https').createServer(https_options, the_website)
-                    .listen(shttps.port|0, sserver.ip);
 
-                console.log(`Started https server on ${sserver.ip}:${shttps.port} and the redirector on port ${sserver.port}.`);
-                return srv;
+                const http = require('http').createServer(redirector);
+                const https = require('https').createServer(https_options, the_website);
+                const dispatch_server = require('net').createServer(dispatch_on_SYN)
+                    .listen(sserver.port|0, sserver.ip);
+
+                console.log(`Started httpx server on ${sserver.ip}:${sserver.port}.`);
+                return https;
             }
 
             function http() {

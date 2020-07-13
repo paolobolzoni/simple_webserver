@@ -35,8 +35,8 @@ websocket = true
 
 
 https section,
-if enabled the server executes in https.  On the http port still runs a http
-server that only understands GET and redirects to the https protocol.
+if enabled the server listens both https and http. But with the http protocol
+the server only understands GET requests and redirects to the https protocol.
 
 The redirection address is taken from the value of fqdn.
 If the fqdn value is missing the redirection is based on the request host
@@ -45,15 +45,14 @@ So, if you are have a domain-validated certificate, put in fqdn the hostname it
 relates to.
 If you are using a self-signed certificate, leave it empty.
 
-The http server will serve all the GET request whose url start with the
-keep_http value if non-empty. The default value is for let's encrypt
+As exception, the server will serve in http the GET requests whose url starts
+with the keep_http value, if non-empty. The default value is for let's encrypt
 challenges.
 
-Finally, the websockets are executed in wss if this section is enabled.
+The websockets are executed in wss if this section is enabled.
 
 [https]
 enabled = true
-port = 8443
 key = './selfsig_keys/key.pem'
 cert = './selfsig_keys/cert.pem'
 fqdn = ''
@@ -61,7 +60,7 @@ keep_http = '/.well-known/acme-challenge/'
 
 
 auth section,
-if enabled the https server (http if https is disabled) uses the basic auth
+If enabled the server uses the basic auth
 
 [auth]
 enabled = false
