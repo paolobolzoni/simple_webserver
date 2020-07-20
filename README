@@ -1,8 +1,8 @@
 
 Here is a minimal but fully featured web server written in Node javascript.
 
-It easily allows to deploy a web server that works in http and https.
-It also allows to use websockets.
+It easily allows to deploy a websocket-enabled web server that works in http
+and https.
 
 
 Dependences:
@@ -22,10 +22,9 @@ $ rm csr.pem
 
 
 
-Settings, all the relative paths start from the same directory where is server.js.
+Settings, relative paths start from the same directory where is server.js.
 
-server section,
-self explanatory.
+server section, self explanatory.
 
 [server]
 ip = '0.0.0.0'
@@ -34,33 +33,39 @@ client_dir = '../client'
 websocket = true
 
 
-https section,
-if enabled the server listens both https and http. But with the http protocol
-the server only understands GET requests and redirects to the https protocol.
+https section, if enabled the server listens both https and http. But with the
+http protocol the server only understands GET requests (so not other verbs like
+POST or websockets) and redirects to the https protocol.
 
 The redirection address is taken from the value of fqdn.
 If the fqdn value is missing the redirection is based on the request host
-header.
-So, if you are have a domain-validated certificate, put in fqdn the hostname it
-relates to.
-If you are using a self-signed certificate, leave it empty.
+header.  So:
+* if you are have a domain-validated certificate, put in fqdn the hostname it
+  relates to,
+* if you are using a self-signed certificate, leave it empty.
 
-As exception, the server will serve in http the GET requests whose url starts
-with the keep_http value, if non-empty. The default value is for let's encrypt
-challenges.
+As exception, the server will serve via plain http the GET requests whose url
+starts with the keep_http value, if non-empty. The default value is for let's
+encrypt challenges.
 
-The websockets are executed in wss if this section is enabled.
+The port value is not mandatory, if present the server will listen http
+requests on the server.port and both http/https on the https.port. If absent
+the server will listen only on server.port to both protocols.
+
+Websockets are executed in wss if this section is enabled.
 
 [https]
 enabled = true
+port = 8443
 key = './selfsig_keys/key.pem'
 cert = './selfsig_keys/cert.pem'
 fqdn = ''
 keep_http = '/.well-known/acme-challenge/'
 
 
-auth section,
-If enabled the server uses the basic auth
+auth section, if enabled the server protects the pages with basic auth.
+If https is enabled, only the https expects the credentials, the http will just
+redirect to https.
 
 [auth]
 enabled = false

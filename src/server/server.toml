@@ -8,6 +8,7 @@ websocket = true
 
 [https]
 enabled = true
+port = 1443
 key = './selfsig_keys/key.pem'
 cert = './selfsig_keys/cert.pem'
 fqdn = ''

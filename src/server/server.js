@@ -1,10 +1,34 @@
 'use strict';
 process.chdir(__dirname);
+process.env.TZ='Etc/UTC';
 
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
 const settings = require('toml').parse(fs.readFileSync('./server.toml', { encoding:'utf8' }));
+
+
+function date_string() {
+    function pad(str) {
+        str = String(str);
+        return '00'.slice(0, -str.length) + str;
+    }
+    const d = new Date();
+
+    let year = String(d.getFullYear());
+    let month = pad(1 + d.getMonth());
+    let day = pad(d.getDate());
+    let hour = pad(d.getHours());
+    let min = pad(d.getMinutes());
+    let sec = pad(d.getSeconds());
+
+    return `${year}-${month}-${day} ${hour}:${min}.${sec}`;
+}
+
+function log(str, error) {
+    const logger = !!error ? console.error : console.log;
+    logger(`${date_string()} - ${str}`);
+}
 
 
 function r(no, req, res) {
@@ -92,12 +116,12 @@ const ws_dispatcher = npObj({
     check_origin: (function(fqdn, port){
         if (!!fqdn) {
             return function(origin) {
-                console.log(`WS connection from ${origin}`);
+                log(`WS connection from ${origin}`);
                 return origin === 'https://' + fqdn + ':' + port;
             }
         } else {
             return function(origin) {
-                console.log(`WS connection from ${origin}`);
+                log(`WS connection from ${origin}`);
                 return true;
             }
         }
@@ -110,7 +134,7 @@ const ws_dispatcher = npObj({
 const server = (new function(settings, methods) {
     const the_website = (function(credentials, methods) {
         function dispatch(req, res) {
-            console.log(`${req.method} ${req.url}`);
+            log(`${req.method} ${req.url} ${req.connection.remoteAddress}`);
 
             if (methods[ req.method ] != null) {
                 return methods[ req.method ](req, res);
@@ -167,43 +191,47 @@ const server = (new function(settings, methods) {
 
     this.start = (function(sserver, shttps) {
         return function() {
-            const redirector = (function(fqdn, port, keep_http) {
-                return function(req, res) {
-                    if (req.method !== 'GET') {
-                        return r(405, req, res);
-                    }
-
-                    if (!!keep_http  &&  req.url.startsWith(keep_http)) {
-                        console.log(`Http GET ${req.url}`);
-                        return get_functions.static_content(req, res);
-                    }
-
-                    let new_host = fqdn;
-                    if (!new_host) {
-                        const old_host = req.headers.host||'';
-                        if (old_host === '')
-                            return r(400, req, res);
-                        const port = old_host.match(/:[0-9]+$/);
-                        new_host = !!port  ?  old_host.slice(0, port.index)  :  old_host;
-                    }
-
-                    const redirect_to = `https://${new_host}:${port}${req.url}`;
-                    console.log(`Http GET redirect ${req.url} -> ${redirect_to}`);
-
-                    res.setHeader('Location', redirect_to);
-                    return r(301, req, res);
-                }
-            }(shttps.fqdn, sserver.port, shttps.keep_http));
-
             function https() {
-                function dispatch_on_SYN(socket) {
+                const http_port = ~~sserver.port;
+                const https_port = ~~( !!shttps.port ? shttps.port: sserver.port );
+
+                const redirector = (function(fqdn, port, keep_http) {
+                    return function(req, res) {
+                        if (req.method !== 'GET') {
+                            return r(405, req, res);
+                        }
+
+                        if (!!keep_http  &&  req.url.startsWith(keep_http)) {
+                            log(`Plain Http GET ${req.url}`);
+                            return get_functions.static_content(req, res);
+                        }
+
+                        let redirect_to;
+                        if (!!fqdn) {
+                            redirect_to = `https://${fqdn}:${port}${req.url}`;
+                        } else {
+                            let host = req.headers.host||'';
+                            if (host === '') return r(400, req, res);
+
+                            const old_port = host.match(/:[0-9]+$/);
+                            host = !!old_port  ?  host.slice(0, old_port.index)  :  host;
+                            redirect_to = `https://${host}:${port}${req.url}`;
+                        }
+                        log(`Http GET redirect ${req.url} -> ${redirect_to}`);
+
+                        res.setHeader('Location', redirect_to);
+                        return r(301, req, res);
+                    }
+                }(shttps.fqdn, https_port, shttps.keep_http));
+
+                function dispatch_on_first_byte(socket) {
                     function ondata(buffer) {
-                        const isSYN = buffer[0] === 22;
+                        const isHttps = buffer[0] === 0x16;
 
                         socket.pause();
                         socket.unshift(buffer);
 
-                        const server = isSYN ? https : http;
+                        const server = isHttps ? https : http;
                         server.emit('connection', socket);
 
                         process.nextTick(function(){ socket.resume(); });
@@ -211,17 +239,24 @@ const server = (new function(settings, methods) {
                     socket.once('data', ondata);
                 }
 
+
                 const https_options = {
                     key: fs.readFileSync(shttps.key),
                     cert: fs.readFileSync(shttps.cert)
                 }
 
                 const http = require('http').createServer(redirector);
-                const https = require('https').createServer(https_options, the_website);
-                const dispatch_server = require('net').createServer(dispatch_on_SYN)
-                    .listen(sserver.port|0, sserver.ip);
+                if (http_port != https_port) http.listen(http_port, sserver.ip);
 
-                console.log(`Started httpx server on ${sserver.ip}:${sserver.port}.`);
+                const https = require('https').createServer(https_options, the_website);
+                const dispatch_server = require('net').createServer(dispatch_on_first_byte)
+                    .listen(https_port, sserver.ip);
+
+                if (http_port != https_port)
+                    log(`Started hybrid http/https server on ${sserver.ip}:${http_port}/${https_port}`);
+                else
+                    log(`Started hybrid http/https server on ${sserver.ip}:${https_port}`);
+
                 return https;
             }
 
@@ -229,7 +264,7 @@ const server = (new function(settings, methods) {
                 const srv = require('http').createServer(the_website)
                     .listen(sserver.port|0, sserver.ip);
 
-                console.log(`Started http server on ${sserver.ip}:${sserver.port}.`);
+                log(`Started http server on ${sserver.ip}:${sserver.port}.`);
                 return srv;
             }
 
