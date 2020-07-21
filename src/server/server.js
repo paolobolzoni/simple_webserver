@@ -8,6 +8,10 @@ const path = require('path');
 const settings = require('toml').parse(fs.readFileSync('./server.toml', { encoding:'utf8' }));
 
 
+function if_err_trace_throw(err) {
+    if (!!err) trace_throw(err);
+}
+
 function date_string() {
     function pad(str) {
         str = String(str);
@@ -239,18 +243,28 @@ const server = (new function(settings, methods) {
                     socket.once('data', ondata);
                 }
 
-
                 const https_options = {
                     key: fs.readFileSync(shttps.key),
                     cert: fs.readFileSync(shttps.cert)
                 }
 
+                let mdrop_privileges = drop_privileges;
                 const http = require('http').createServer(redirector);
-                if (http_port != https_port) http.listen(http_port, sserver.ip);
+                if (http_port !== https_port) {
+                    let counter = 2;
+                    mdrop_privileges = function(err) {
+                        if (--counter > 0) return;
+                        drop_privileges(err);
+                    }
+
+                    http.listen(http_port, sserver.ip);
+                    http.once('listening', mdrop_privileges);
+                }
 
                 const https = require('https').createServer(https_options, the_website);
                 const dispatch_server = require('net').createServer(dispatch_on_first_byte)
                     .listen(https_port, sserver.ip);
+                dispatch_server.once('listening', mdrop_privileges);
 
                 if (http_port != https_port)
                     log(`Started hybrid http/https server on ${sserver.ip}:${http_port}/${https_port}`);
@@ -260,9 +274,26 @@ const server = (new function(settings, methods) {
                 return https;
             }
 
+            const drop_privileges = (function(name, group) {
+                if (process.getui == undefined
+                        ||  name === '' || group === ''
+                        ||  process.getuid() !== 0)
+                    return if_err_trace_throw;
+
+                return function(err) {
+                    if_err_trace_throw(err);
+
+                    process.setgid(name);
+                    process.setuid(group);
+
+                    log(`Executing as user:group ${process.getuid()}:${process.getgid()}`);
+                }
+            }(sserver.username, sserver.groupname));
+
             function http() {
                 const srv = require('http').createServer(the_website)
                     .listen(sserver.port|0, sserver.ip);
+                srv.once('listening', drop_privileges);
 
                 log(`Started http server on ${sserver.ip}:${sserver.port}.`);
                 return srv;

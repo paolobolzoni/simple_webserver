@@ -4,6 +4,8 @@ ip = '0.0.0.0'
 port = 1080
 client_dir = '../client'
 websocket = true
+username = 'nobody'
+groupname = 'nobody'
 
 
 [https]
