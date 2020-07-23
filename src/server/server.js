@@ -12,6 +12,11 @@ function if_err_trace_throw(err) {
     if (!!err) trace_throw(err);
 }
 
+function trace_throw(e) {
+    console.trace();
+    throw e;
+}
+
 function date_string() {
     function pad(str) {
         str = String(str);
@@ -196,8 +201,8 @@ const server = (new function(settings, methods) {
     this.start = (function(sserver, shttps) {
         return function() {
             function https() {
-                const http_port = ~~sserver.port;
-                const https_port = ~~( !!shttps.port ? shttps.port: sserver.port );
+                const http_port = 0| sserver.port;
+                const https_port = 0| ( shttps.port || sserver.port );
 
                 const redirector = (function(fqdn, port, keep_http) {
                     return function(req, res) {
@@ -248,34 +253,34 @@ const server = (new function(settings, methods) {
                     cert: fs.readFileSync(shttps.cert)
                 }
 
-                let mdrop_privileges = drop_privileges;
                 const http = require('http').createServer(redirector);
+                const https = require('https').createServer(https_options, the_website);
+                const dispatch_server = require('net').createServer(dispatch_on_first_byte)
+                    .listen(https_port, sserver.ip);
+
                 if (http_port !== https_port) {
                     let counter = 2;
-                    mdrop_privileges = function(err) {
+                    function wait_both_n_drop(err) {
                         if (--counter > 0) return;
                         drop_privileges(err);
                     }
 
                     http.listen(http_port, sserver.ip);
-                    http.once('listening', mdrop_privileges);
-                }
 
-                const https = require('https').createServer(https_options, the_website);
-                const dispatch_server = require('net').createServer(dispatch_on_first_byte)
-                    .listen(https_port, sserver.ip);
-                dispatch_server.once('listening', mdrop_privileges);
+                    dispatch_server.once('listening', wait_both_n_drop);
+                    http.once('listening', wait_both_n_drop);
 
-                if (http_port != https_port)
                     log(`Started hybrid http/https server on ${sserver.ip}:${http_port}/${https_port}`);
-                else
-                    log(`Started hybrid http/https server on ${sserver.ip}:${https_port}`);
+                } else {
+                    dispatch_server.once('listening', drop_privileges);
 
+                    log(`Started hybrid http/https server on ${sserver.ip}:${https_port}`);
+                }
                 return https;
             }
 
             const drop_privileges = (function(name, group) {
-                if (process.getui == undefined
+                if (process.getuid == undefined
                         ||  name === '' || group === ''
                         ||  process.getuid() !== 0)
                     return if_err_trace_throw;
